@@ -3,20 +3,33 @@
  *
  * Lets users enter an invite code (PJ-XXXXXX) to join an existing potluck.
  * Parses the code, looks it up in Supabase, and adds the user as a member.
+ *
+ * Also supports deep links: if someone taps a link like
+ * /potluck/join?code=PJ-XXXXXX, the code is auto-filled and the form
+ * can be submitted immediately.
  */
 
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { parseInviteCode } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
 
-export default function JoinPotluckPage() {
+function JoinForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+
+  // Auto-fill the code if it came in via a deep link (?code=PJ-XXXXXX)
+  useEffect(() => {
+    const codeFromUrl = searchParams.get('code')
+    if (codeFromUrl) {
+      setCode(codeFromUrl.toUpperCase())
+    }
+  }, [searchParams])
 
   async function handleJoin(e: React.FormEvent) {
     e.preventDefault()
@@ -105,5 +118,18 @@ export default function JoinPotluckPage() {
         </button>
       </form>
     </div>
+  )
+}
+
+// Wrap in Suspense because useSearchParams() requires it in Next.js App Router
+export default function JoinPotluckPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <p className="text-gray-400 text-sm">Loading...</p>
+      </div>
+    }>
+      <JoinForm />
+    </Suspense>
   )
 }

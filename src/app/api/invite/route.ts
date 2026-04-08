@@ -24,6 +24,7 @@ export async function POST(request: NextRequest) {
       cuisineTheme,
       cuisineEmoji,
       inviteCode,
+      deepLink,
       eventDate,
       eventTime,
       location,
@@ -49,10 +50,9 @@ ${cuisineEmoji} Potluck: ${potluckName}
 🍽️ Cuisine: ${cuisineTheme}${eventDate ? `\n📅 Date: ${eventDate}` : ''}${eventTime ? `\n🕐 Time: ${eventTime}` : ''}${location ? `\n📍 Location: ${location}` : ''}
 
 Here's how to join:
-1. Go to the app
-2. Tap "Join with Code"
-3. Enter this code: ${inviteCode}
-4. Spin the wheel to get your recipe assignment!
+👉 Tap this link: ${deepLink || `https://potluck-jackpot.vercel.app/potluck/join?code=${inviteCode}`}
+
+Or enter the code manually: ${inviteCode}
 
 You'll get a random ${cuisineTheme} recipe to cook and bring. It's like a game show meets dinner party!
 

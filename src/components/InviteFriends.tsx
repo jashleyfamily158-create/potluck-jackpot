@@ -44,15 +44,26 @@ export default function InviteFriends({
   const [sent, setSent] = useState(false)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
+  const [copiedLink, setCopiedLink] = useState(false)
+
+  // Build the shareable deep link — anyone who taps it goes straight to the join page
+  const deepLink = `https://potluck-jackpot.vercel.app/potluck/join?code=${formattedCode}`
 
   // Build the invite message text (used by both email and share)
-  const inviteMessage = `🎰 You're invited to "${potluckName}"!\n\n${cuisineEmoji} Cuisine: ${cuisineTheme}\n${eventDate ? `📅 Date: ${eventDate}\n` : ''}${eventTime ? `🕐 Time: ${eventTime}\n` : ''}${location ? `📍 Location: ${location}\n` : ''}\nJoin with code: ${formattedCode}\n\nDownload Potluck Jackpot and enter the code to spin for your recipe assignment!`
+  const inviteMessage = `🎰 You're invited to "${potluckName}"!\n\n${cuisineEmoji} Cuisine: ${cuisineTheme}\n${eventDate ? `📅 Date: ${eventDate}\n` : ''}${eventTime ? `🕐 Time: ${eventTime}\n` : ''}${location ? `📍 Location: ${location}\n` : ''}\nJoin here 👉 ${deepLink}\n\n(or enter code ${formattedCode} at potluck-jackpot.vercel.app)`
 
   // Copy invite code to clipboard
   function handleCopy() {
     navigator.clipboard?.writeText(formattedCode)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  // Copy the full deep link to clipboard
+  function handleCopyLink() {
+    navigator.clipboard?.writeText(deepLink)
+    setCopiedLink(true)
+    setTimeout(() => setCopiedLink(false), 2000)
   }
 
   // Native share (works on mobile — SMS, WhatsApp, Messenger, etc.)
@@ -62,15 +73,16 @@ export default function InviteFriends({
         await navigator.share({
           title: `Join my potluck: ${potluckName}`,
           text: inviteMessage,
+          url: deepLink,
         })
       } catch {
         // User cancelled the share — that's fine
       }
     } else {
-      // Fallback for desktop: copy to clipboard
-      navigator.clipboard?.writeText(inviteMessage)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      // Fallback for desktop: copy link to clipboard
+      navigator.clipboard?.writeText(deepLink)
+      setCopiedLink(true)
+      setTimeout(() => setCopiedLink(false), 2000)
     }
   }
 
@@ -91,6 +103,7 @@ export default function InviteFriends({
           cuisineTheme,
           cuisineEmoji,
           inviteCode: formattedCode,
+          deepLink,
           eventDate,
           eventTime,
           location,
@@ -127,20 +140,29 @@ export default function InviteFriends({
         Invite Friends 🎉
       </h3>
 
-      {/* Invite code with copy */}
-      <div className="bg-white rounded-xl p-4 card-shadow text-center">
-        <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold mb-1">
+      {/* Invite code + link with copy buttons */}
+      <div className="bg-white rounded-xl p-4 card-shadow text-center space-y-2">
+        <p className="text-xs text-gray-400 uppercase tracking-wider font-semibold">
           Invite Code
         </p>
         <p className="text-2xl font-extrabold tracking-widest text-orange-500">
           {formattedCode}
         </p>
-        <button
-          onClick={handleCopy}
-          className="text-xs text-orange-400 mt-1 font-medium"
-        >
-          {copied ? '✅ Copied!' : '📋 Copy Code'}
-        </button>
+        <div className="flex gap-2 justify-center">
+          <button
+            onClick={handleCopy}
+            className="text-xs text-orange-400 font-semibold bg-orange-50 px-3 py-1.5 rounded-lg"
+          >
+            {copied ? '✅ Copied!' : '📋 Copy Code'}
+          </button>
+          <button
+            onClick={handleCopyLink}
+            className="text-xs text-purple-500 font-semibold bg-purple-50 px-3 py-1.5 rounded-lg"
+          >
+            {copiedLink ? '✅ Copied!' : '🔗 Copy Link'}
+          </button>
+        </div>
+        <p className="text-xs text-gray-400 truncate">{deepLink}</p>
       </div>
 
       {/* Share and Email buttons */}

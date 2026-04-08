@@ -220,13 +220,40 @@ export default function PotluckDashboard() {
           </div>
         )}
 
-        {potluck.status === 'active' && (
-          <Link
-            href={`/potluck/${potluckId}/rate`}
-            className="block w-full gradient-primary text-white font-bold py-3 rounded-xl text-sm text-center"
+        {/* Host marks the potluck as happened — unlocks ratings for everyone */}
+        {potluck.status === 'spinning' && isHost && (
+          <button
+            onClick={async () => {
+              await supabase.from('potlucks').update({ status: 'active' }).eq('id', potluckId)
+              setPotluck(prev => prev ? { ...prev, status: 'active' } : null)
+            }}
+            className="w-full bg-[#27AE60] text-white font-bold py-3 rounded-xl text-sm"
           >
-            ⭐ Rate Dishes
-          </Link>
+            🎉 Potluck Happened! Open Ratings
+          </button>
+        )}
+
+        {potluck.status === 'active' && (
+          <>
+            <Link
+              href={`/potluck/${potluckId}/rate`}
+              className="block w-full gradient-primary text-white font-bold py-3 rounded-xl text-sm text-center"
+            >
+              ⭐ Rate Dishes
+            </Link>
+            {/* Host can close ratings and show final results */}
+            {isHost && (
+              <button
+                onClick={async () => {
+                  await supabase.from('potlucks').update({ status: 'completed' }).eq('id', potluckId)
+                  setPotluck(prev => prev ? { ...prev, status: 'completed' } : null)
+                }}
+                className="w-full border-2 border-gray-200 text-gray-500 font-bold py-3 rounded-xl text-sm"
+              >
+                🔒 Close Ratings & See Results
+              </button>
+            )}
+          </>
         )}
 
         {potluck.status === 'completed' && (
