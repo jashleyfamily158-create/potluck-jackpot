@@ -19,6 +19,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth-context'
 import { formatInviteCode, formatDate, formatTime, CUISINE_THEMES } from '@/lib/utils'
 import InviteFriends from '@/components/InviteFriends'
+import PhotoUpload from '@/components/PhotoUpload'
 
 interface Potluck {
   id: string
@@ -53,6 +54,7 @@ export default function PotluckDashboard() {
   const [members, setMembers] = useState<Member[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [showPhotoUpload, setShowPhotoUpload] = useState(false)
 
   // Find the cuisine emoji for the theme
   const cuisineInfo = CUISINE_THEMES.find(c => c.name === potluck?.cuisine_theme)
@@ -234,6 +236,25 @@ export default function PotluckDashboard() {
           >
             🏆 View Results
           </Link>
+        )}
+
+        {/* Share a photo — always visible for members */}
+        {currentMember && (
+          <button
+            onClick={() => setShowPhotoUpload(!showPhotoUpload)}
+            className="w-full bg-[#4ECDC4] text-white font-bold py-3 rounded-xl text-sm"
+          >
+            📸 Share a Photo
+          </button>
+        )}
+
+        {/* Photo upload form */}
+        {showPhotoUpload && (
+          <PhotoUpload
+            potluckId={potluckId}
+            onUploaded={() => setShowPhotoUpload(false)}
+            onCancel={() => setShowPhotoUpload(false)}
+          />
         )}
       </div>
 
