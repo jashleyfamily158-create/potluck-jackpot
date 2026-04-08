@@ -181,6 +181,17 @@ export default function InviteFriends({
         </button>
       </div>
 
+      {/* Facebook share — opens Facebook share dialog in a small popup */}
+      <button
+        onClick={() => {
+          const fbUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(deepLink)}`
+          window.open(fbUrl, '_blank', 'width=600,height=400,noopener,noreferrer')
+        }}
+        className="w-full bg-[#1877F2] text-white font-bold py-3 rounded-xl text-sm hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+      >
+        <span>📘</span> Share on Facebook
+      </button>
+
       {/* Email form (expandable) */}
       {showEmailForm && (
         <form onSubmit={handleSendEmail} className="bg-white rounded-xl p-4 card-shadow space-y-3">

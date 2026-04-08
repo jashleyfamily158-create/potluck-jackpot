@@ -116,6 +116,40 @@ export default function PotluckDashboard() {
     }
   }, [potluckId])
 
+  // Build a Google Calendar link for the potluck event
+  function buildCalendarUrl() {
+    if (!potluck?.event_date) return null
+
+    const title = encodeURIComponent(`🎰 ${potluck.name} — Potluck Jackpot`)
+    const locationStr = encodeURIComponent(potluck.location || '')
+    const details = encodeURIComponent(
+      `A Potluck Jackpot event!\n\nCuisine: ${potluck.cuisine_theme}\nJoin at: https://potluck-jackpot.vercel.app/potluck/${potluck.id}`
+    )
+
+    // Format date: YYYYMMDD
+    const dateParts = potluck.event_date.split('-')
+    const dateStr = dateParts.join('')
+
+    let dates = ''
+    if (potluck.event_time) {
+      // Format time: remove colons and slice to 6 digits (HHMMSS)
+      const timeParts = potluck.event_time.split(':')
+      const hh = timeParts[0].padStart(2, '0')
+      const mm = timeParts[1]?.padStart(2, '0') || '00'
+      const startTime = `${hh}${mm}00`
+
+      // End time: 3 hours later
+      const endHH = String((parseInt(hh) + 3) % 24).padStart(2, '0')
+      const endTime = `${endHH}${mm}00`
+      dates = `${dateStr}T${startTime}/${dateStr}T${endTime}`
+    } else {
+      // All-day event
+      dates = `${dateStr}/${dateStr}`
+    }
+
+    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dates}&details=${details}&location=${locationStr}`
+  }
+
   // Host starts the spin phase
   async function startSpinPhase() {
     await supabase
@@ -176,6 +210,28 @@ export default function PotluckDashboard() {
           )}
           {potluck.location && (
             <span>📍 {potluck.location}</span>
+          )}
+        </div>
+
+        {/* Add to Calendar + Recap links */}
+        <div className="flex gap-2 mt-3 pt-3 border-t border-gray-100">
+          {potluck.event_date && buildCalendarUrl() && (
+            <a
+              href={buildCalendarUrl()!}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 text-center text-xs font-semibold text-blue-500 bg-blue-50 py-2 rounded-lg"
+            >
+              📅 Add to Calendar
+            </a>
+          )}
+          {potluck.status === 'completed' && (
+            <Link
+              href={`/potluck/${potluckId}/recap`}
+              className="flex-1 text-center text-xs font-semibold text-orange-500 bg-orange-50 py-2 rounded-lg"
+            >
+              🎉 View Recap
+            </Link>
           )}
         </div>
       </div>

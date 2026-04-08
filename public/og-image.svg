@@ -1,0 +1,39 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background gradient -->
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FF6B6B"/>
+      <stop offset="50%" stop-color="#FF8E53"/>
+      <stop offset="100%" stop-color="#FFC93C"/>
+    </linearGradient>
+    <linearGradient id="cardGrad" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.18)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0.06)"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bgGrad)"/>
+
+  <!-- Decorative circles -->
+  <circle cx="80" cy="80" r="140" fill="white" fill-opacity="0.06"/>
+  <circle cx="1140" cy="560" r="180" fill="white" fill-opacity="0.06"/>
+  <circle cx="1100" cy="80" r="90" fill="white" fill-opacity="0.08"/>
+  <circle cx="100" cy="560" r="110" fill="white" fill-opacity="0.05"/>
+
+  <!-- Card -->
+  <rect x="100" y="100" width="1000" height="430" rx="40" fill="url(#cardGrad)" stroke="white" stroke-opacity="0.2" stroke-width="2"/>
+
+  <!-- Emoji -->
+  <text x="600" y="260" font-size="140" text-anchor="middle" dominant-baseline="middle">🎰</text>
+
+  <!-- Title -->
+  <text x="600" y="360" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="72" font-weight="800" fill="white" text-anchor="middle" letter-spacing="-1">Potluck Jackpot</text>
+
+  <!-- Subtitle -->
+  <text x="600" y="430" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="32" font-weight="500" fill="white" fill-opacity="0.9" text-anchor="middle">Spin the wheel · Cook a dish · Bring it to the party 🍽️</text>
+
+  <!-- Bottom tag -->
+  <rect x="470" y="480" width="260" height="52" rx="26" fill="white" fill-opacity="0.2"/>
+  <text x="600" y="514" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="22" font-weight="700" fill="white" text-anchor="middle">potluck-jackpot.vercel.app</text>
+</svg>
