@@ -118,8 +118,64 @@ export default function HomePage() {
 
   return (
     <div className="space-y-6">
-      {/* Welcome banner */}
-      <div className="gradient-primary rounded-2xl p-5 text-white">
+      {/* Welcome banner — with decorative spinning wheel in the background */}
+      <div className="gradient-primary rounded-2xl p-5 text-white relative overflow-hidden">
+
+        {/* Decorative wheel — slowly rotates behind the content */}
+        <div
+          className="absolute right-[-50px] top-[-50px] w-52 h-52 opacity-[0.15] animate-spin pointer-events-none"
+          style={{ animationDuration: '28s', animationTimingFunction: 'linear' }}
+        >
+          <svg viewBox="0 0 200 200" className="w-full h-full">
+            {['#FF6B6B','#FF8E53','#FFC93C','#4ECDC4','#A06CD5','#27AE60','#E74C3C','#3498DB'].map((color, i) => {
+              const seg = 45 // 360 / 8
+              const startRad = (seg * i * Math.PI) / 180
+              const endRad   = (seg * (i + 1) * Math.PI) / 180
+              const x1 = 100 + 100 * Math.cos(startRad)
+              const y1 = 100 + 100 * Math.sin(startRad)
+              const x2 = 100 + 100 * Math.cos(endRad)
+              const y2 = 100 + 100 * Math.sin(endRad)
+              return (
+                <path key={i}
+                  d={`M 100 100 L ${x1} ${y1} A 100 100 0 0 1 ${x2} ${y2} Z`}
+                  fill={color} stroke="rgba(255,255,255,0.3)" strokeWidth="1.5"
+                />
+              )
+            })}
+            <circle cx="100" cy="100" r="16" fill="rgba(255,255,255,0.4)" />
+            <circle cx="100" cy="100" r="8"  fill="rgba(255,255,255,0.7)" />
+          </svg>
+        </div>
+
+        {/* Second smaller wheel — bottom left, counter-rotating */}
+        <div
+          className="absolute left-[-30px] bottom-[-30px] w-28 h-28 opacity-[0.10] pointer-events-none"
+          style={{
+            animation: 'spin 18s linear infinite reverse',
+            animationName: 'spin',
+          }}
+        >
+          <svg viewBox="0 0 200 200" className="w-full h-full">
+            {['#FFC93C','#A06CD5','#4ECDC4','#FF6B6B','#27AE60','#FF8E53'].map((color, i) => {
+              const seg = 60 // 360 / 6
+              const startRad = (seg * i * Math.PI) / 180
+              const endRad   = (seg * (i + 1) * Math.PI) / 180
+              const x1 = 100 + 100 * Math.cos(startRad)
+              const y1 = 100 + 100 * Math.sin(startRad)
+              const x2 = 100 + 100 * Math.cos(endRad)
+              const y2 = 100 + 100 * Math.sin(endRad)
+              return (
+                <path key={i}
+                  d={`M 100 100 L ${x1} ${y1} A 100 100 0 0 1 ${x2} ${y2} Z`}
+                  fill={color} stroke="rgba(255,255,255,0.3)" strokeWidth="1.5"
+                />
+              )
+            })}
+          </svg>
+        </div>
+
+        {/* Content sits above the decorative wheels */}
+        <div className="relative z-10">
         <h2 className="text-2xl font-extrabold mb-1">
           {user ? 'Ready to Cook? 🎰' : 'Welcome to Potluck Jackpot! 🎰'}
         </h2>
@@ -142,6 +198,7 @@ export default function HomePage() {
             🎟️ Join with Code
           </Link>
         </div>
+        </div> {/* end relative z-10 */}
       </div>
 
       {/* Not logged in prompt */}

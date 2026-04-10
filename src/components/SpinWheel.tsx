@@ -1,12 +1,12 @@
 /**
- * Spin Wheel Component
+ * Spin Wheel Component — upgraded
  *
- * An animated spinning wheel that lands on a random recipe.
- * The wheel shows recipe names around the edge, spins with
- * a satisfying animation, and reveals the assigned recipe
- * when it stops.
- *
- * Uses CSS transforms and transitions for the spin animation.
+ * Changes from v1:
+ * - Larger wheel (320px)
+ * - Pulsing glow ring appears while spinning
+ * - Gradient center button with shadow
+ * - Bolder pointer with a drop shadow
+ * - Segment text slightly larger for readability
  */
 
 'use client'
@@ -19,7 +19,6 @@ interface SpinWheelProps {
   onResult: (recipe: Recipe) => void
 }
 
-// Colors for the wheel segments — matches our playful design system
 const SEGMENT_COLORS = [
   '#FF6B6B', '#FF8E53', '#FFC93C', '#4ECDC4',
   '#A06CD5', '#27AE60', '#E74C3C', '#3498DB',
@@ -27,13 +26,12 @@ const SEGMENT_COLORS = [
 ]
 
 export default function SpinWheel({ recipes, onResult }: SpinWheelProps) {
-  const [spinning, setSpinning] = useState(false)
-  const [rotation, setRotation] = useState(0)
-  const [result, setResult] = useState<Recipe | null>(null)
+  const [spinning,  setSpinning]  = useState(false)
+  const [rotation,  setRotation]  = useState(0)
+  const [result,    setResult]    = useState<Recipe | null>(null)
 
-  // How many segments we show on the wheel (max 8 for readability)
   const displayRecipes = recipes.slice(0, 8)
-  const segmentAngle = 360 / displayRecipes.length
+  const segmentAngle   = 360 / displayRecipes.length
 
   const spin = useCallback(() => {
     if (spinning) return
@@ -41,87 +39,103 @@ export default function SpinWheel({ recipes, onResult }: SpinWheelProps) {
     setSpinning(true)
     setResult(null)
 
-    // Pick a random recipe from the FULL list (not just displayed ones)
-    const winnerIndex = Math.floor(Math.random() * recipes.length)
-    const winner = recipes[winnerIndex]
-
-    // Calculate how much to spin:
-    // At least 5 full rotations + land on the winning segment
-    const displayIndex = winnerIndex % displayRecipes.length
-    const targetAngle = 360 - (displayIndex * segmentAngle + segmentAngle / 2)
-    const totalRotation = rotation + 1800 + targetAngle // 5 full spins + target
+    const winnerIndex    = Math.floor(Math.random() * recipes.length)
+    const winner         = recipes[winnerIndex]
+    const displayIndex   = winnerIndex % displayRecipes.length
+    const targetAngle    = 360 - (displayIndex * segmentAngle + segmentAngle / 2)
+    const totalRotation  = rotation + 1800 + targetAngle
 
     setRotation(totalRotation)
 
-    // After the animation completes, show the result
     setTimeout(() => {
       setResult(winner)
       setSpinning(false)
       onResult(winner)
-    }, 4000) // matches the CSS transition duration
+    }, 4200)
   }, [spinning, rotation, recipes, displayRecipes, segmentAngle, onResult])
 
   return (
-    <div className="flex flex-col items-center space-y-6">
-      {/* The wheel container */}
-      <div className="relative w-72 h-72">
-        {/* Pointer triangle at the top */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-2 z-10">
-          <div className="w-0 h-0 border-l-[12px] border-l-transparent border-r-[12px] border-r-transparent border-t-[20px] border-t-gray-800" />
+    <div className="flex flex-col items-center gap-6">
+
+      {/* Glow ring + wheel wrapper */}
+      <div className="relative w-80 h-80">
+
+        {/* Pulsing glow ring — only shows while spinning */}
+        {spinning && (
+          <div
+            className="absolute inset-[-8px] rounded-full animate-ping"
+            style={{
+              background: 'radial-gradient(circle, rgba(160,108,213,0.4) 0%, transparent 70%)',
+              animationDuration: '1.2s',
+            }}
+          />
+        )}
+
+        {/* Static outer glow ring */}
+        <div
+          className="absolute inset-[-4px] rounded-full transition-all duration-500"
+          style={{
+            boxShadow: spinning
+              ? '0 0 40px 12px rgba(160,108,213,0.5), 0 0 80px 20px rgba(255,107,107,0.3)'
+              : '0 0 20px 4px rgba(0,0,0,0.08)',
+          }}
+        />
+
+        {/* Pointer — bold downward triangle at top */}
+        <div className="absolute top-[-2px] left-1/2 -translate-x-1/2 z-20 drop-shadow-md">
+          <div
+            className="w-0 h-0"
+            style={{
+              borderLeft:  '14px solid transparent',
+              borderRight: '14px solid transparent',
+              borderTop:   '24px solid #1F2937',
+            }}
+          />
         </div>
 
         {/* The spinning wheel */}
         <div
-          className="w-full h-full rounded-full overflow-hidden border-4 border-gray-800 relative"
+          className="w-full h-full rounded-full overflow-hidden relative"
           style={{
-            transform: `rotate(${rotation}deg)`,
-            transition: spinning
-              ? 'transform 4s cubic-bezier(0.17, 0.67, 0.12, 0.99)'
-              : 'none',
+            transform:  `rotate(${rotation}deg)`,
+            transition: spinning ? 'transform 4.2s cubic-bezier(0.17, 0.67, 0.08, 0.99)' : 'none',
+            boxShadow:  'inset 0 0 0 4px #1F2937, 0 4px 24px rgba(0,0,0,0.15)',
           }}
         >
-          {/* SVG wheel segments */}
           <svg viewBox="0 0 200 200" className="w-full h-full">
             {displayRecipes.map((recipe, i) => {
-              const startAngle = i * segmentAngle
-              const endAngle = startAngle + segmentAngle
-              const startRad = (startAngle * Math.PI) / 180
-              const endRad = (endAngle * Math.PI) / 180
-
+              const start    = i * segmentAngle
+              const end      = start + segmentAngle
+              const startRad = (start * Math.PI) / 180
+              const endRad   = (end   * Math.PI) / 180
               const x1 = 100 + 100 * Math.cos(startRad)
               const y1 = 100 + 100 * Math.sin(startRad)
               const x2 = 100 + 100 * Math.cos(endRad)
               const y2 = 100 + 100 * Math.sin(endRad)
-
-              const largeArc = segmentAngle > 180 ? 1 : 0
-
-              // Text position (middle of the segment, partway out from center)
-              const midAngle = ((startAngle + endAngle) / 2) * Math.PI / 180
-              const textX = 100 + 60 * Math.cos(midAngle)
-              const textY = 100 + 60 * Math.sin(midAngle)
-              const textRotation = (startAngle + endAngle) / 2
+              const mid    = ((start + end) / 2) * Math.PI / 180
+              const textX  = 100 + 62 * Math.cos(mid)
+              const textY  = 100 + 62 * Math.sin(mid)
+              const textRot = (start + end) / 2
 
               return (
                 <g key={i}>
                   <path
-                    d={`M 100 100 L ${x1} ${y1} A 100 100 0 ${largeArc} 1 ${x2} ${y2} Z`}
+                    d={`M 100 100 L ${x1} ${y1} A 100 100 0 ${segmentAngle > 180 ? 1 : 0} 1 ${x2} ${y2} Z`}
                     fill={SEGMENT_COLORS[i % SEGMENT_COLORS.length]}
-                    stroke="white"
-                    strokeWidth="1"
+                    stroke="rgba(255,255,255,0.25)"
+                    strokeWidth="1.5"
                   />
                   <text
-                    x={textX}
-                    y={textY}
+                    x={textX} y={textY}
                     fill="white"
-                    fontSize="5.5"
-                    fontWeight="bold"
+                    fontSize="6"
+                    fontWeight="800"
                     textAnchor="middle"
                     dominantBaseline="middle"
-                    transform={`rotate(${textRotation}, ${textX}, ${textY})`}
+                    transform={`rotate(${textRot}, ${textX}, ${textY})`}
+                    style={{ textShadow: '0 1px 2px rgba(0,0,0,0.3)' }}
                   >
-                    {recipe.name.length > 18
-                      ? recipe.name.substring(0, 16) + '...'
-                      : recipe.name}
+                    {recipe.name.length > 16 ? recipe.name.substring(0, 14) + '…' : recipe.name}
                   </text>
                 </g>
               )
@@ -129,21 +143,41 @@ export default function SpinWheel({ recipes, onResult }: SpinWheelProps) {
           </svg>
         </div>
 
-        {/* Center circle */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-gray-800 border-4 border-white flex items-center justify-center">
-          <span className="text-white text-lg">🎰</span>
-        </div>
+        {/* Center button / hub */}
+        <button
+          onClick={spin}
+          disabled={spinning || !!result}
+          className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 rounded-full z-10 flex items-center justify-center transition-transform active:scale-95 disabled:cursor-not-allowed"
+          style={{
+            background: spinning
+              ? 'linear-gradient(135deg, #A06CD5, #7C4DFF)'
+              : 'linear-gradient(135deg, #FF6B6B, #FF8E53)',
+            boxShadow: '0 0 0 4px white, 0 4px 16px rgba(0,0,0,0.25)',
+          }}
+        >
+          <span className="text-2xl">{spinning ? '🌀' : '🎰'}</span>
+        </button>
       </div>
 
-      {/* Spin button */}
+      {/* Spin CTA button — below the wheel */}
       {!result && (
         <button
           onClick={spin}
           disabled={spinning}
-          className="gradient-primary text-white font-extrabold text-lg py-4 px-12 rounded-2xl disabled:opacity-60 transition-all transform hover:scale-105 active:scale-95"
+          className="gradient-primary text-white font-extrabold text-lg py-4 px-14 rounded-2xl shadow-lg disabled:opacity-60 transition-all transform hover:scale-105 active:scale-95"
+          style={{
+            boxShadow: spinning ? 'none' : '0 4px 20px rgba(255,107,107,0.4)',
+          }}
         >
-          {spinning ? '🎰 Spinning...' : '🎰 SPIN!'}
+          {spinning ? '🌀 Spinning…' : '🎰 SPIN!'}
         </button>
+      )}
+
+      {/* Subtle hint text */}
+      {!spinning && !result && (
+        <p className="text-xs text-gray-400">
+          Tap the button or the center of the wheel
+        </p>
       )}
     </div>
   )
