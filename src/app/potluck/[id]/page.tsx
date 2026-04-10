@@ -1,14 +1,16 @@
 /**
- * Potluck Dashboard
+ * Potluck Dashboard — v3
  *
- * Redesigned around the 4 stages of a potluck:
- *   1. pending   → Gather guests, share invite
- *   2. spinning  → Everyone spins for their recipe
- *   3. active    → Rate dishes, share photos
- *   4. completed → See results and recap
+ * Layout priority:
+ *   1. Slim identity header (name, cuisine, step dots)
+ *   2. Hero action block — THE first thing you see, changes per stage
+ *   3. Supporting info (guests, host controls)
  *
- * Each stage shows ONE clear primary action.
- * Everything else is secondary or hidden until relevant.
+ * Stages:
+ *   pending   → Invite crew + start spin
+ *   spinning  → Spin wheel (or your assignment if already done)
+ *   active    → Rate dishes + share photos
+ *   completed → Results & recap
  */
 
 'use client'
@@ -20,6 +22,8 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth-context'
 import { formatInviteCode, formatDate, formatTime, CUISINE_THEMES } from '@/lib/utils'
 import PhotoUpload from '@/components/PhotoUpload'
+
+// ── Types ────────────────────────────────────────────────────────────────────
 
 interface Potluck {
   id: string
@@ -39,332 +43,335 @@ interface Member {
   rsvp_status: string
   assigned_recipe_name: string | null
   assigned_recipe_url: string | null
-  profiles: { display_name: string; avatar_url: string | null }
-    | { display_name: string; avatar_url: string | null }[]
+  profiles: { display_name: string } | { display_name: string }[]
 }
 
-// Resolve profiles whether Supabase returns it as object or array
-function getDisplayName(profiles: Member['profiles']): string {
+function getName(profiles: Member['profiles']): string {
   if (!profiles) return 'Unknown'
   if (Array.isArray(profiles)) return profiles[0]?.display_name || 'Unknown'
   return (profiles as { display_name: string }).display_name || 'Unknown'
 }
 
-// Stage metadata — label + colour + step number shown to user
-const STAGES = {
-  pending:   { step: 1, total: 4, label: 'Gathering Guests',   color: 'text-yellow-600 bg-yellow-50 border-yellow-200' },
-  spinning:  { step: 2, total: 4, label: 'Spin Phase',         color: 'text-purple-600 bg-purple-50 border-purple-200' },
-  active:    { step: 3, total: 4, label: 'Rating Dishes',      color: 'text-green-600  bg-green-50  border-green-200'  },
-  completed: { step: 4, total: 4, label: 'Completed',          color: 'text-gray-500   bg-gray-50   border-gray-200'   },
+// ── Stage config ─────────────────────────────────────────────────────────────
+
+const STAGE_ORDER = ['pending', 'spinning', 'active', 'completed']
+
+// Dot step indicator
+function StepDots({ status }: { status: string }) {
+  const current = STAGE_ORDER.indexOf(status)
+  return (
+    <div className="flex items-center gap-1.5">
+      {STAGE_ORDER.map((_, i) => (
+        <div
+          key={i}
+          className={`rounded-full transition-all ${
+            i < current  ? 'w-2 h-2 bg-white opacity-60' :
+            i === current ? 'w-3 h-2 bg-white' :
+            'w-2 h-2 bg-white opacity-25'
+          }`}
+        />
+      ))}
+    </div>
+  )
 }
 
+// ── Google Calendar URL ───────────────────────────────────────────────────────
+
+function buildCalendarUrl(potluck: Potluck): string | null {
+  if (!potluck.event_date) return null
+  const title   = encodeURIComponent(`🎰 ${potluck.name} — Potluck Jackpot`)
+  const loc     = encodeURIComponent(potluck.location || '')
+  const details = encodeURIComponent(`Cuisine: ${potluck.cuisine_theme}\nhttps://potluck-jackpot.vercel.app/potluck/${potluck.id}`)
+  const d       = potluck.event_date.replace(/-/g, '')
+  let dates = `${d}/${d}`
+  if (potluck.event_time) {
+    const [hh, mm] = potluck.event_time.split(':')
+    const endHH = String((parseInt(hh) + 3) % 24).padStart(2, '0')
+    dates = `${d}T${hh}${mm}00/${d}T${endHH}${mm}00`
+  }
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dates}&details=${details}&location=${loc}`
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
 export default function PotluckDashboard() {
-  const params   = useParams()
-  const router   = useRouter()
-  const { user } = useAuth()
+  const params    = useParams()
+  const router    = useRouter()
+  const { user }  = useAuth()
   const potluckId = params.id as string
 
   const [potluck,         setPotluck]         = useState<Potluck | null>(null)
   const [members,         setMembers]         = useState<Member[]>([])
   const [loading,         setLoading]         = useState(true)
   const [error,           setError]           = useState('')
-  const [showInvite,      setShowInvite]      = useState(false)
+  const [showEmailForm,   setShowEmailForm]   = useState(false)
   const [showPhotoUpload, setShowPhotoUpload] = useState(false)
   const [copied,          setCopied]          = useState(false)
-  const [actionLoading,   setActionLoading]   = useState(false)
+  const [advancing,       setAdvancing]       = useState(false)
 
-  const cuisineInfo    = CUISINE_THEMES.find(c => c.name === potluck?.cuisine_theme)
-  const isHost         = user?.id === potluck?.host_id
-  const currentMember  = members.find(m => m.user_id === user?.id)
-  const hasSpun        = !!currentMember?.assigned_recipe_name
-  const stage          = STAGES[(potluck?.status as keyof typeof STAGES) ?? 'pending'] ?? STAGES.pending
-  const spunCount      = members.filter(m => m.assigned_recipe_name).length
-  const formattedCode  = potluck ? formatInviteCode(potluck.invite_code) : ''
-  const deepLink       = potluck ? `https://potluck-jackpot.vercel.app/potluck/join?code=${formattedCode}` : ''
+  const cuisineInfo   = CUISINE_THEMES.find(c => c.name === potluck?.cuisine_theme)
+  const isHost        = user?.id === potluck?.host_id
+  const me            = members.find(m => m.user_id === user?.id)
+  const hasSpun       = !!me?.assigned_recipe_name
+  const spunCount     = members.filter(m => m.assigned_recipe_name).length
+  const formattedCode = potluck ? formatInviteCode(potluck.invite_code) : ''
+  const deepLink      = `https://potluck-jackpot.vercel.app/potluck/join?code=${formattedCode}`
+
+  // ── Data fetching ───────────────────────────────────────────────────────────
 
   useEffect(() => {
-    async function fetchPotluck() {
-      const { data: potluckData, error: potluckError } = await supabase
-        .from('potlucks').select('*').eq('id', potluckId).single()
+    async function load() {
+      const { data, error: e } = await supabase.from('potlucks').select('*').eq('id', potluckId).single()
+      if (e || !data) { setError('Potluck not found'); setLoading(false); return }
+      setPotluck(data)
 
-      if (potluckError || !potluckData) {
-        setError('Potluck not found'); setLoading(false); return
-      }
-      setPotluck(potluckData)
-
-      const { data: membersData } = await supabase
+      const { data: mData } = await supabase
         .from('potluck_members')
-        .select('*, profiles(display_name, avatar_url)')
+        .select('*, profiles(display_name)')
         .eq('potluck_id', potluckId)
-
-      if (membersData) setMembers(membersData as unknown as Member[])
+      if (mData) setMembers(mData as unknown as Member[])
       setLoading(false)
     }
 
-    fetchPotluck()
+    load()
 
-    const channel = supabase
+    const ch = supabase
       .channel(`potluck-${potluckId}`)
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'potluck_members', filter: `potluck_id=eq.${potluckId}` },
-        fetchPotluck)
+        load)
       .subscribe()
 
-    return () => { supabase.removeChannel(channel) }
+    return () => { supabase.removeChannel(ch) }
   }, [potluckId])
 
-  // Copy invite code to clipboard
-  function handleCopyCode() {
-    navigator.clipboard?.writeText(formattedCode)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+  // ── Actions ─────────────────────────────────────────────────────────────────
+
+  async function advance(status: string) {
+    setAdvancing(true)
+    await supabase.from('potlucks').update({ status }).eq('id', potluckId)
+    setPotluck(p => p ? { ...p, status } : null)
+    setAdvancing(false)
   }
 
-  // Native share sheet (SMS, WhatsApp, iMessage, etc.)
-  async function handleShare() {
-    const text = `🎰 Join my potluck "${potluck?.name}"!\n\nCuisine: ${potluck?.cuisine_theme}\nTap to join 👉 ${deepLink}`
+  async function share() {
+    const text = `🎰 Join "${potluck?.name}" on Potluck Jackpot!\nCuisine: ${potluck?.cuisine_theme}\n👉 ${deepLink}`
     if (navigator.share) {
-      try { await navigator.share({ title: `Join my potluck!`, text, url: deepLink }) } catch { /* cancelled */ }
+      try { await navigator.share({ title: 'Join my potluck!', text, url: deepLink }) } catch { /**/ }
     } else {
       navigator.clipboard?.writeText(deepLink)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      setCopied(true); setTimeout(() => setCopied(false), 2000)
     }
   }
 
-  // Host: move potluck to next stage
-  async function advanceStage(newStatus: string) {
-    setActionLoading(true)
-    await supabase.from('potlucks').update({ status: newStatus }).eq('id', potluckId)
-    setPotluck(prev => prev ? { ...prev, status: newStatus } : null)
-    setActionLoading(false)
+  function copyCode() {
+    navigator.clipboard?.writeText(formattedCode)
+    setCopied(true); setTimeout(() => setCopied(false), 2000)
   }
 
-  // Google Calendar link
-  function calendarUrl() {
-    if (!potluck?.event_date) return null
-    const title    = encodeURIComponent(`🎰 ${potluck.name} — Potluck Jackpot`)
-    const location = encodeURIComponent(potluck.location || '')
-    const details  = encodeURIComponent(`Cuisine: ${potluck.cuisine_theme}\nhttps://potluck-jackpot.vercel.app/potluck/${potluck.id}`)
-    const dateStr  = potluck.event_date.replace(/-/g, '')
-    let dates = ''
-    if (potluck.event_time) {
-      const [hh, mm] = potluck.event_time.split(':')
-      const endHH = String((parseInt(hh) + 3) % 24).padStart(2, '0')
-      dates = `${dateStr}T${hh}${mm}00/${dateStr}T${endHH}${mm}00`
-    } else {
-      dates = `${dateStr}/${dateStr}`
-    }
-    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dates}&details=${details}&location=${location}`
-  }
-
-  // ── Loading / error states ──────────────────────────────────────────────────
+  // ── Loading / error ──────────────────────────────────────────────────────────
 
   if (loading) return (
     <div className="min-h-[60vh] flex items-center justify-center">
-      <p className="text-gray-400 text-sm">Loading potluck...</p>
+      <p className="text-gray-400 text-sm animate-pulse">Loading…</p>
     </div>
   )
 
   if (error || !potluck) return (
-    <div className="min-h-[60vh] flex flex-col items-center justify-center text-center gap-3">
-      <div className="text-4xl">😕</div>
-      <p className="text-gray-500">{error || 'Potluck not found'}</p>
-      <button onClick={() => router.push('/')} className="text-orange-500 font-semibold text-sm">← Go Home</button>
+    <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3 text-center">
+      <span className="text-4xl">😕</span>
+      <p className="text-gray-500 text-sm">{error || 'Potluck not found'}</p>
+      <button onClick={() => router.push('/')} className="text-orange-500 font-bold text-sm">← Home</button>
     </div>
   )
 
-  // ── Main render ─────────────────────────────────────────────────────────────
+  const calUrl = buildCalendarUrl(potluck)
+  const status = potluck.status
+
+  // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
 
-      {/* ── Header ── */}
-      <div className="gradient-primary rounded-2xl p-5 text-white">
-        <div className="flex items-start justify-between gap-2 mb-2">
-          <div className="flex items-center gap-3">
-            <span className="text-3xl">{cuisineInfo?.emoji || '🍽️'}</span>
-            <div>
-              <h2 className="text-xl font-extrabold leading-tight">{potluck.name}</h2>
-              <p className="text-sm opacity-80">{potluck.cuisine_theme} cuisine</p>
-            </div>
-          </div>
-          {/* Stage badge */}
-          <span className="text-xs font-bold bg-white/20 px-2.5 py-1 rounded-full whitespace-nowrap">
-            Step {stage.step}/{stage.total}
-          </span>
+      {/* ── Identity strip ───────────────────────────────────────────────────── */}
+      {/* Slim: emoji + name + step dots. Not the focus — just orientation. */}
+      <div className={`rounded-2xl px-4 py-3.5 flex items-center gap-3 ${
+        status === 'pending'   ? 'bg-[#FF8E53]' :
+        status === 'spinning'  ? 'bg-[#A06CD5]' :
+        status === 'active'    ? 'bg-[#27AE60]' :
+        'bg-gray-600'
+      }`}>
+        <span className="text-2xl">{cuisineInfo?.emoji || '🍽️'}</span>
+        <div className="flex-1 min-w-0">
+          <p className="text-white font-extrabold text-base leading-tight truncate">{potluck.name}</p>
+          <p className="text-white/70 text-xs">{potluck.cuisine_theme} cuisine</p>
         </div>
-
-        {/* Event details */}
-        {(potluck.event_date || potluck.location) && (
-          <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs opacity-80 mt-1">
-            {potluck.event_date && <span>📅 {formatDate(potluck.event_date)}</span>}
-            {potluck.event_time && <span>🕐 {formatTime(potluck.event_time)}</span>}
-            {potluck.location   && <span>📍 {potluck.location}</span>}
-          </div>
-        )}
-
-        {/* Step label + progress bar */}
-        <div className="mt-3">
-          <div className="flex justify-between text-xs opacity-70 mb-1">
-            <span>{stage.label}</span>
-            <span>{stage.step} of {stage.total}</span>
-          </div>
-          <div className="h-1.5 bg-white/20 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-white rounded-full transition-all duration-500"
-              style={{ width: `${(stage.step / stage.total) * 100}%` }}
-            />
-          </div>
-        </div>
+        <StepDots status={status} />
       </div>
 
-      {/* ── STAGE 1: Pending — gather guests ── */}
-      {potluck.status === 'pending' && (
-        <>
-          {/* Invite section */}
-          <div className="bg-white rounded-2xl p-5 card-shadow">
-            <h3 className="text-base font-extrabold text-gray-900 mb-1">Invite your guests</h3>
-            <p className="text-xs text-gray-400 mb-4">Share the code or link — friends tap to join</p>
-
-            {/* Code display */}
-            <div className="bg-gray-50 rounded-xl py-3 px-4 text-center mb-3">
-              <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider mb-0.5">Invite Code</p>
-              <p className="text-3xl font-extrabold tracking-widest text-orange-500">{formattedCode}</p>
-            </div>
-
-            {/* Primary share action */}
-            <button
-              onClick={handleShare}
-              className="w-full gradient-primary text-white font-bold py-3.5 rounded-xl text-sm mb-2"
-            >
-              📱 Share Invite Link
-            </button>
-
-            {/* Secondary options in one compact row */}
-            <div className="flex gap-2">
-              <button
-                onClick={handleCopyCode}
-                className="flex-1 text-sm font-semibold text-gray-600 bg-gray-100 py-2.5 rounded-xl"
-              >
-                {copied ? '✅ Copied!' : '📋 Copy Code'}
-              </button>
-              <button
-                onClick={() => {
-                  const fbUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(deepLink)}`
-                  window.open(fbUrl, '_blank', 'width=600,height=400,noopener,noreferrer')
-                }}
-                className="flex-1 text-sm font-semibold text-white bg-[#1877F2] py-2.5 rounded-xl"
-              >
-                📘 Facebook
-              </button>
-              <button
-                onClick={() => setShowInvite(!showInvite)}
-                className="flex-1 text-sm font-semibold text-purple-600 bg-purple-50 py-2.5 rounded-xl"
-              >
-                ✉️ Email
-              </button>
-            </div>
-
-            {/* Email invite — expandable */}
-            {showInvite && <EmailInviteForm potluck={potluck} formattedCode={formattedCode} deepLink={deepLink} cuisineInfo={cuisineInfo} />}
-          </div>
-
-          {/* Calendar add */}
-          {calendarUrl() && (
-            <a
-              href={calendarUrl()!}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 bg-white rounded-xl px-4 py-3 card-shadow text-sm font-semibold text-blue-500"
-            >
-              📅 Add to your calendar
-              <span className="ml-auto text-gray-300">›</span>
+      {/* Event meta — date / time / location */}
+      {(potluck.event_date || potluck.location) && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1">
+          {potluck.event_date && <span className="text-xs text-gray-500">📅 {formatDate(potluck.event_date)}</span>}
+          {potluck.event_time && <span className="text-xs text-gray-500">🕐 {formatTime(potluck.event_time)}</span>}
+          {potluck.location   && <span className="text-xs text-gray-500">📍 {potluck.location}</span>}
+          {calUrl && (
+            <a href={calUrl} target="_blank" rel="noopener noreferrer"
+              className="text-xs text-blue-400 font-semibold ml-auto">
+              + Calendar
             </a>
           )}
+        </div>
+      )}
 
-          {/* Host CTA: start spin phase */}
+
+      {/* ════════════════════════════════════════════════════════════════════════
+          STAGE 1 — PENDING: Invite crew
+      ════════════════════════════════════════════════════════════════════════ */}
+      {status === 'pending' && (
+        <>
+          {/* Hero: invite block */}
+          <div className="bg-white rounded-2xl overflow-hidden card-shadow">
+            {/* Orange accent top bar */}
+            <div className="h-1 bg-gradient-to-r from-[#FF6B6B] via-[#FF8E53] to-[#FFC93C]" />
+            <div className="p-5">
+              <p className="text-xs font-bold text-orange-400 uppercase tracking-widest mb-1">Step 1 of 4</p>
+              <h2 className="text-xl font-extrabold text-gray-900 mb-0.5">Invite your crew 🎉</h2>
+              <p className="text-sm text-gray-400 mb-5">Share the link — friends tap it and they&apos;re in.</p>
+
+              {/* Code display */}
+              <div className="bg-orange-50 rounded-xl py-3 text-center mb-4">
+                <p className="text-xs text-orange-400 font-bold uppercase tracking-wider mb-0.5">Invite Code</p>
+                <p className="text-3xl font-extrabold tracking-[0.18em] text-orange-500">{formattedCode}</p>
+              </div>
+
+              {/* Primary CTA */}
+              <button
+                onClick={share}
+                className="w-full gradient-primary text-white font-extrabold py-4 rounded-xl text-sm mb-3 shadow-sm"
+              >
+                📱 Share Invite Link
+              </button>
+
+              {/* Secondary row */}
+              <div className="grid grid-cols-3 gap-2">
+                <button onClick={copyCode}
+                  className="py-2.5 rounded-xl bg-gray-100 text-gray-600 text-xs font-bold">
+                  {copied ? '✅ Done' : '📋 Copy'}
+                </button>
+                <button
+                  onClick={() => {
+                    const fb = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(deepLink)}`
+                    window.open(fb, '_blank', 'width=600,height=400,noopener,noreferrer')
+                  }}
+                  className="py-2.5 rounded-xl bg-[#1877F2] text-white text-xs font-bold">
+                  📘 Facebook
+                </button>
+                <button onClick={() => setShowEmailForm(!showEmailForm)}
+                  className="py-2.5 rounded-xl bg-purple-50 text-purple-600 text-xs font-bold">
+                  ✉️ Email
+                </button>
+              </div>
+
+              {/* Email form */}
+              {showEmailForm && <EmailForm potluck={potluck} formattedCode={formattedCode} deepLink={deepLink} cuisineInfo={cuisineInfo} />}
+            </div>
+          </div>
+
+          {/* Host: start spin — only visible once someone else has joined */}
           {isHost && (
             <div className="bg-white rounded-2xl p-5 card-shadow">
-              <p className="text-sm font-bold text-gray-900 mb-1">Ready to spin?</p>
-              <p className="text-xs text-gray-400 mb-3">
-                Once all your guests have joined, kick off the spin phase. Everyone will be assigned a random recipe.
-              </p>
-              <button
-                onClick={() => advanceStage('spinning')}
-                disabled={actionLoading || members.length < 2}
-                className="w-full gradient-primary text-white font-bold py-3.5 rounded-xl text-sm disabled:opacity-40"
-              >
-                {actionLoading ? 'Starting…' : '🎰 Start Spin Phase'}
-              </button>
-              {members.length < 2 && (
-                <p className="text-xs text-gray-400 text-center mt-2">Invite at least one more guest first</p>
-              )}
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center text-xl flex-shrink-0">🎰</div>
+                <div className="flex-1">
+                  <p className="font-extrabold text-gray-900 text-sm mb-0.5">Ready to spin?</p>
+                  <p className="text-xs text-gray-400 mb-3">
+                    Once everyone&apos;s joined, kick off the spin phase. Each person gets a random recipe.
+                  </p>
+                  <button
+                    onClick={() => advance('spinning')}
+                    disabled={advancing || members.length < 2}
+                    className="w-full gradient-primary text-white font-bold py-3 rounded-xl text-sm disabled:opacity-40"
+                  >
+                    {advancing ? 'Starting…' : '🎰 Start Spin Phase'}
+                  </button>
+                  {members.length < 2 && (
+                    <p className="text-xs text-gray-400 text-center mt-2">Need at least 2 guests to start</p>
+                  )}
+                </div>
+              </div>
             </div>
           )}
         </>
       )}
 
-      {/* ── STAGE 2: Spinning — everyone gets a recipe ── */}
-      {potluck.status === 'spinning' && (
+
+      {/* ════════════════════════════════════════════════════════════════════════
+          STAGE 2 — SPINNING: Get your recipe
+      ════════════════════════════════════════════════════════════════════════ */}
+      {status === 'spinning' && (
         <>
-          {/* User's primary action */}
+          {/* Hero: spin or assignment */}
           {!hasSpun ? (
-            <Link
-              href={`/potluck/${potluckId}/spin`}
-              className="block bg-white rounded-2xl p-5 card-shadow text-center"
-            >
-              <div className="text-5xl mb-2">🎰</div>
-              <p className="text-lg font-extrabold text-gray-900 mb-1">Your turn to spin!</p>
-              <p className="text-sm text-gray-400 mb-4">Tap to get your random recipe assignment</p>
-              <div className="gradient-primary text-white font-bold py-3.5 rounded-xl text-sm">
-                Spin the Wheel →
+            /* Not yet spun — big inviting spin card */
+            <Link href={`/potluck/${potluckId}/spin`}
+              className="block rounded-2xl overflow-hidden card-shadow">
+              <div className="bg-gradient-to-br from-[#A06CD5] to-[#7C4DFF] p-6 text-center text-white">
+                <div className="text-6xl mb-3">🎰</div>
+                <p className="text-xs font-bold uppercase tracking-widest opacity-70 mb-1">Step 2 of 4</p>
+                <h2 className="text-2xl font-extrabold mb-1">Spin your wheel!</h2>
+                <p className="text-sm opacity-80 mb-5">
+                  Tap below to get your random {potluck.cuisine_theme} recipe assignment.
+                </p>
+                <div className="bg-white text-purple-600 font-extrabold py-3.5 rounded-xl text-sm">
+                  Spin Now →
+                </div>
               </div>
             </Link>
           ) : (
-            <div className="bg-green-50 border border-green-200 rounded-2xl p-5 text-center">
-              <div className="text-4xl mb-2">✅</div>
-              <p className="text-base font-extrabold text-green-800 mb-1">You&apos;re all set!</p>
-              <p className="text-sm text-green-700">
-                You&apos;re making <strong>{currentMember?.assigned_recipe_name}</strong>
-              </p>
-              {currentMember?.assigned_recipe_url && (
-                <a
-                  href={currentMember.assigned_recipe_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-block mt-3 text-xs font-semibold text-green-600 bg-green-100 px-3 py-1.5 rounded-full"
-                >
-                  View Recipe →
-                </a>
-              )}
+            /* Already spun — show assignment */
+            <div className="bg-white rounded-2xl overflow-hidden card-shadow">
+              <div className="h-1 bg-[#27AE60]" />
+              <div className="p-5">
+                <p className="text-xs font-bold text-green-500 uppercase tracking-widest mb-1">Your assignment</p>
+                <h2 className="text-xl font-extrabold text-gray-900 mb-1">
+                  ✅ You&apos;re making:
+                </h2>
+                <p className="text-lg font-bold text-green-700 mb-3">{me?.assigned_recipe_name}</p>
+                {me?.assigned_recipe_url && (
+                  <a href={me.assigned_recipe_url} target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-sm font-bold text-white bg-green-500 px-4 py-2 rounded-xl">
+                    View Recipe →
+                  </a>
+                )}
+              </div>
             </div>
           )}
 
           {/* Spin progress */}
           <div className="bg-white rounded-2xl p-4 card-shadow">
-            <div className="flex justify-between items-center mb-3">
-              <p className="text-sm font-bold text-gray-900">Who&apos;s spun?</p>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-extrabold text-gray-900">Who&apos;s spun?</p>
               <span className="text-xs font-bold text-purple-600 bg-purple-50 px-2.5 py-1 rounded-full">
-                {spunCount}/{members.length} done
+                {spunCount} / {members.length}
               </span>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {members.map(m => {
-                const name = getDisplayName(m.profiles)
-                const spun = !!m.assigned_recipe_name
+                const name = getName(m.profiles)
+                const done = !!m.assigned_recipe_name
                 return (
-                  <div key={m.id} className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-orange-500 font-bold text-xs flex-shrink-0">
+                  <div key={m.id} className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-600 font-extrabold text-xs flex-shrink-0">
                       {name.charAt(0).toUpperCase()}
                     </div>
-                    <p className="flex-1 text-sm font-medium text-gray-800">
+                    <p className="flex-1 text-sm font-semibold text-gray-800 truncate">
                       {name}
-                      {m.user_id === potluck.host_id && <span className="text-orange-400 ml-1">👑</span>}
+                      {m.user_id === potluck.host_id && <span className="text-orange-400 ml-1 text-xs">👑</span>}
                     </p>
-                    {spun
-                      ? <span className="text-xs text-green-600 font-semibold">✅ Spun</span>
-                      : <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 animate-pulse flex-shrink-0" />
+                    {done
+                      ? <span className="text-xs font-bold text-green-500">✅ Done</span>
+                      : <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse flex-shrink-0" />
                     }
                   </div>
                 )
@@ -372,260 +379,244 @@ export default function PotluckDashboard() {
             </div>
           </div>
 
-          {/* Host: once everyone's done / potluck happened */}
+          {/* Host: open ratings */}
           {isHost && (
-            <div className="bg-white rounded-2xl p-4 card-shadow">
-              <p className="text-sm font-bold text-gray-900 mb-1">Potluck night arrived?</p>
+            <div className="bg-white rounded-2xl p-4 card-shadow border border-gray-100">
+              <p className="text-sm font-extrabold text-gray-900 mb-0.5">Potluck night happened?</p>
               <p className="text-xs text-gray-400 mb-3">Open ratings so guests can score each other&apos;s dishes.</p>
-              <button
-                onClick={() => advanceStage('active')}
-                disabled={actionLoading}
-                className="w-full bg-[#27AE60] text-white font-bold py-3 rounded-xl text-sm disabled:opacity-40"
-              >
-                {actionLoading ? 'Opening…' : '🎉 Potluck Happened — Open Ratings'}
+              <button onClick={() => advance('active')} disabled={advancing}
+                className="w-full bg-[#27AE60] text-white font-bold py-3 rounded-xl text-sm disabled:opacity-40">
+                {advancing ? 'Opening…' : '🎉 Open Ratings'}
               </button>
             </div>
           )}
         </>
       )}
 
-      {/* ── STAGE 3: Active — rating dishes ── */}
-      {potluck.status === 'active' && (
+
+      {/* ════════════════════════════════════════════════════════════════════════
+          STAGE 3 — ACTIVE: Rate dishes
+      ════════════════════════════════════════════════════════════════════════ */}
+      {status === 'active' && (
         <>
-          <Link
-            href={`/potluck/${potluckId}/rate`}
-            className="block bg-white rounded-2xl p-5 card-shadow text-center"
-          >
-            <div className="text-5xl mb-2">⭐</div>
-            <p className="text-lg font-extrabold text-gray-900 mb-1">Rate the dishes!</p>
-            <p className="text-sm text-gray-400 mb-4">Score everyone&apos;s dish 1–5 stars</p>
-            <div className="gradient-primary text-white font-bold py-3.5 rounded-xl text-sm">
-              Rate Dishes →
+          {/* Hero: rate CTA */}
+          <Link href={`/potluck/${potluckId}/rate`}
+            className="block rounded-2xl overflow-hidden card-shadow">
+            <div className="bg-gradient-to-br from-[#27AE60] to-[#1ABC9C] p-6 text-center text-white">
+              <div className="text-6xl mb-3">⭐</div>
+              <p className="text-xs font-bold uppercase tracking-widest opacity-70 mb-1">Step 3 of 4</p>
+              <h2 className="text-2xl font-extrabold mb-1">Rate the dishes!</h2>
+              <p className="text-sm opacity-80 mb-5">
+                Give every dish a score from 1 to 5 stars. Ratings are anonymous.
+              </p>
+              <div className="bg-white text-green-600 font-extrabold py-3.5 rounded-xl text-sm">
+                Rate Dishes →
+              </div>
             </div>
           </Link>
 
-          {/* Photo share */}
+          {/* Share a photo */}
           <button
             onClick={() => setShowPhotoUpload(!showPhotoUpload)}
-            className="w-full bg-white rounded-xl px-4 py-3.5 card-shadow text-sm font-semibold text-teal-600 flex items-center gap-2"
+            className="w-full bg-white rounded-xl px-4 py-3.5 card-shadow flex items-center gap-3 text-left"
           >
-            <span className="text-xl">📸</span>
-            <span>Share a photo from the night</span>
-            <span className="ml-auto text-gray-300">›</span>
+            <span className="text-2xl">📸</span>
+            <div className="flex-1">
+              <p className="text-sm font-bold text-gray-900">Share a photo</p>
+              <p className="text-xs text-gray-400">Post a pic from the night to the feed</p>
+            </div>
+            <span className="text-gray-300 text-lg">›</span>
           </button>
           {showPhotoUpload && (
-            <PhotoUpload potluckId={potluckId} onUploaded={() => setShowPhotoUpload(false)} onCancel={() => setShowPhotoUpload(false)} />
+            <PhotoUpload potluckId={potluckId}
+              onUploaded={() => setShowPhotoUpload(false)}
+              onCancel={() => setShowPhotoUpload(false)} />
           )}
 
           {/* Host: close ratings */}
           {isHost && (
-            <div className="bg-white rounded-2xl p-4 card-shadow">
-              <p className="text-sm font-bold text-gray-900 mb-1">Everyone rated?</p>
-              <p className="text-xs text-gray-400 mb-3">Close ratings to reveal the final scores.</p>
-              <button
-                onClick={() => advanceStage('completed')}
-                disabled={actionLoading}
-                className="w-full border-2 border-gray-200 text-gray-500 font-bold py-3 rounded-xl text-sm disabled:opacity-40"
-              >
-                {actionLoading ? 'Closing…' : '🔒 Close Ratings & Reveal Results'}
+            <div className="bg-white rounded-2xl p-4 card-shadow border border-gray-100">
+              <p className="text-sm font-extrabold text-gray-900 mb-0.5">Everyone rated?</p>
+              <p className="text-xs text-gray-400 mb-3">Close ratings to lock in scores and reveal the winner.</p>
+              <button onClick={() => advance('completed')} disabled={advancing}
+                className="w-full border-2 border-gray-200 text-gray-500 font-bold py-3 rounded-xl text-sm disabled:opacity-40">
+                {advancing ? 'Closing…' : '🔒 Close Ratings & Reveal Results'}
               </button>
             </div>
           )}
         </>
       )}
 
-      {/* ── STAGE 4: Completed ── */}
-      {potluck.status === 'completed' && (
+
+      {/* ════════════════════════════════════════════════════════════════════════
+          STAGE 4 — COMPLETED
+      ════════════════════════════════════════════════════════════════════════ */}
+      {status === 'completed' && (
         <>
+          {/* Hero: results + recap side by side */}
           <div className="grid grid-cols-2 gap-3">
-            <Link
-              href={`/potluck/${potluckId}/results`}
-              className="bg-white rounded-2xl p-4 card-shadow text-center"
-            >
-              <div className="text-3xl mb-1">🏆</div>
-              <p className="text-sm font-extrabold text-gray-900">Results</p>
-              <p className="text-xs text-gray-400">See the scores</p>
+            <Link href={`/potluck/${potluckId}/results`}
+              className="bg-white rounded-2xl p-5 card-shadow text-center flex flex-col items-center gap-2">
+              <span className="text-4xl">🏆</span>
+              <p className="font-extrabold text-gray-900 text-sm">Results</p>
+              <p className="text-xs text-gray-400">Final scores</p>
             </Link>
-            <Link
-              href={`/potluck/${potluckId}/recap`}
-              className="gradient-primary rounded-2xl p-4 text-center text-white"
-            >
-              <div className="text-3xl mb-1">🎉</div>
-              <p className="text-sm font-extrabold">Recap</p>
-              <p className="text-xs opacity-80">Winner &amp; photos</p>
+            <Link href={`/potluck/${potluckId}/recap`}
+              className="rounded-2xl p-5 text-center flex flex-col items-center gap-2 gradient-primary text-white">
+              <span className="text-4xl">🎉</span>
+              <p className="font-extrabold text-sm">Recap</p>
+              <p className="text-xs opacity-80">Winner + photos</p>
             </Link>
           </div>
 
           {/* Share recap */}
-          <div className="flex gap-2">
+          <div className="grid grid-cols-2 gap-2">
             <button
               onClick={() => {
-                const recapUrl = `https://potluck-jackpot.vercel.app/potluck/${potluckId}/recap`
-                if (navigator.share) {
-                  navigator.share({ title: `${potluck.name} Recap`, url: recapUrl })
-                } else {
-                  navigator.clipboard?.writeText(recapUrl)
-                }
+                const url = `https://potluck-jackpot.vercel.app/potluck/${potluckId}/recap`
+                if (navigator.share) navigator.share({ title: `${potluck.name} Recap`, url })
+                else navigator.clipboard?.writeText(url)
               }}
-              className="flex-1 bg-[#4ECDC4] text-white font-bold py-3 rounded-xl text-sm"
-            >
+              className="bg-[#4ECDC4] text-white font-bold py-3 rounded-xl text-sm">
               📱 Share Recap
             </button>
             <button
               onClick={() => {
-                const recapUrl = `https://potluck-jackpot.vercel.app/potluck/${potluckId}/recap`
-                window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(recapUrl)}`, '_blank', 'width=600,height=400')
+                const url = `https://potluck-jackpot.vercel.app/potluck/${potluckId}/recap`
+                window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`, '_blank', 'width=600,height=400')
               }}
-              className="flex-1 bg-[#1877F2] text-white font-bold py-3 rounded-xl text-sm"
-            >
+              className="bg-[#1877F2] text-white font-bold py-3 rounded-xl text-sm">
               📘 Facebook
             </button>
           </div>
 
-          {/* Photo share still available */}
+          {/* Photo share */}
           <button
             onClick={() => setShowPhotoUpload(!showPhotoUpload)}
-            className="w-full bg-white rounded-xl px-4 py-3.5 card-shadow text-sm font-semibold text-teal-600 flex items-center gap-2"
+            className="w-full bg-white rounded-xl px-4 py-3.5 card-shadow flex items-center gap-3 text-left"
           >
-            <span className="text-xl">📸</span>
-            <span>Share a photo</span>
-            <span className="ml-auto text-gray-300">›</span>
+            <span className="text-2xl">📸</span>
+            <div className="flex-1">
+              <p className="text-sm font-bold text-gray-900">Share a photo</p>
+              <p className="text-xs text-gray-400">Add to the potluck feed</p>
+            </div>
+            <span className="text-gray-300 text-lg">›</span>
           </button>
           {showPhotoUpload && (
-            <PhotoUpload potluckId={potluckId} onUploaded={() => setShowPhotoUpload(false)} onCancel={() => setShowPhotoUpload(false)} />
+            <PhotoUpload potluckId={potluckId}
+              onUploaded={() => setShowPhotoUpload(false)}
+              onCancel={() => setShowPhotoUpload(false)} />
           )}
         </>
       )}
 
-      {/* ── Guest list — always visible, compact ── */}
+
+      {/* ── Guest list — always visible, always last ──────────────────────── */}
       <div className="bg-white rounded-2xl p-4 card-shadow">
         <div className="flex items-center justify-between mb-3">
           <p className="text-sm font-extrabold text-gray-900">
-            Guests <span className="text-gray-400 font-normal">({members.length})</span>
+            Guests <span className="text-gray-400 font-normal ml-1">({members.length})</span>
           </p>
-          {/* During pending stage, quick invite shortcut */}
-          {potluck.status === 'pending' && (
-            <button onClick={handleShare} className="text-xs text-orange-500 font-semibold">
+          {status === 'pending' && (
+            <button onClick={share} className="text-xs font-bold text-orange-500">
               + Invite
             </button>
           )}
         </div>
 
-        {members.length === 0 ? (
-          <p className="text-center text-gray-400 text-sm py-3">No guests yet</p>
-        ) : (
-          <div className="space-y-2">
-            {members.map(m => {
-              const name = getDisplayName(m.profiles)
-              return (
-                <div key={m.id} className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-full bg-orange-100 flex items-center justify-center text-orange-500 font-bold text-sm flex-shrink-0">
-                    {name.charAt(0).toUpperCase()}
+        {members.length === 0
+          ? <p className="text-center text-gray-400 text-sm py-2">No guests yet — share the invite!</p>
+          : (
+            <div className="space-y-2.5">
+              {members.map(m => {
+                const name = getName(m.profiles)
+                const colors = ['bg-orange-100 text-orange-500', 'bg-purple-100 text-purple-500', 'bg-teal-100 text-teal-500', 'bg-pink-100 text-pink-500']
+                const color  = colors[name.charCodeAt(0) % colors.length]
+                return (
+                  <div key={m.id} className="flex items-center gap-2.5">
+                    <div className={`w-9 h-9 rounded-full flex items-center justify-center font-extrabold text-sm flex-shrink-0 ${color}`}>
+                      {name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-900 truncate">
+                        {name}
+                        {m.user_id === potluck.host_id && <span className="text-orange-400 text-xs ml-1">👑</span>}
+                      </p>
+                      <p className="text-xs text-gray-400 truncate">
+                        {m.assigned_recipe_name
+                          ? `🍳 ${m.assigned_recipe_name}`
+                          : m.rsvp_status === 'declined' ? '❌ Declined'
+                          : '⏳ Joined'}
+                      </p>
+                    </div>
+                    {status === 'spinning' && (
+                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                        m.assigned_recipe_name ? 'bg-green-400' : 'bg-yellow-400 animate-pulse'}`} />
+                    )}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 truncate">
-                      {name}
-                      {m.user_id === potluck.host_id && <span className="text-orange-400 ml-1">👑</span>}
-                    </p>
-                    <p className="text-xs text-gray-400 truncate">
-                      {m.assigned_recipe_name
-                        ? `🍳 ${m.assigned_recipe_name}`
-                        : m.rsvp_status === 'accepted' ? '✅ Joined'
-                        : m.rsvp_status === 'declined' ? '❌ Declined'
-                        : '⏳ Pending'}
-                    </p>
-                  </div>
-                  {potluck.status === 'spinning' && (
-                    <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
-                      m.assigned_recipe_name ? 'bg-green-400' : 'bg-yellow-400 animate-pulse'
-                    }`} />
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
+                )
+              })}
+            </div>
+          )
+        }
       </div>
     </div>
   )
 }
 
-// ── Email invite form (inlined, shown only during pending stage) ─────────────
+// ── Email invite form ─────────────────────────────────────────────────────────
 
-function EmailInviteForm({
-  potluck, formattedCode, deepLink, cuisineInfo
-}: {
+function EmailForm({ potluck, formattedCode, deepLink, cuisineInfo }: {
   potluck: Potluck
   formattedCode: string
   deepLink: string
-  cuisineInfo: { emoji: string; name: string } | undefined
+  cuisineInfo: { emoji: string } | undefined
 }) {
-  const [email,       setEmail]       = useState('')
-  const [friendName,  setFriendName]  = useState('')
-  const [sending,     setSending]     = useState(false)
-  const [sent,        setSent]        = useState(false)
-  const [err,         setErr]         = useState('')
+  const [name,    setName]    = useState('')
+  const [email,   setEmail]   = useState('')
+  const [sending, setSending] = useState(false)
+  const [sent,    setSent]    = useState(false)
+  const [err,     setErr]     = useState('')
 
-  async function handleSend(e: React.FormEvent) {
-    e.preventDefault()
-    setSending(true); setErr('')
+  async function send(e: React.FormEvent) {
+    e.preventDefault(); setSending(true); setErr('')
     try {
-      const res = await fetch('/api/invite', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res  = await fetch('/api/invite', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          to: email,
-          friendName: friendName.trim() || undefined,
-          potluckName: potluck.name,
-          cuisineTheme: potluck.cuisine_theme,
+          to: email, friendName: name || undefined,
+          potluckName: potluck.name, cuisineTheme: potluck.cuisine_theme,
           cuisineEmoji: cuisineInfo?.emoji || '🍽️',
-          inviteCode: formattedCode,
-          deepLink,
+          inviteCode: formattedCode, deepLink,
           eventDate: potluck.event_date ?? undefined,
           eventTime: potluck.event_time ?? undefined,
-          location: potluck.location ?? undefined,
+          location:  potluck.location  ?? undefined,
         }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed')
       if (data.mailtoUrl) window.open(data.mailtoUrl, '_blank')
-      setSent(true); setEmail(''); setFriendName('')
+      setSent(true); setName(''); setEmail('')
       setTimeout(() => setSent(false), 3000)
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Failed to send')
-    }
+    } catch (ex) { setErr(ex instanceof Error ? ex.message : 'Failed') }
     setSending(false)
   }
 
   return (
-    <form onSubmit={handleSend} className="mt-3 pt-3 border-t border-gray-100 space-y-3">
-      <input
-        type="text"
-        value={friendName}
-        onChange={e => setFriendName(e.target.value)}
+    <form onSubmit={send} className="mt-4 pt-4 border-t border-gray-100 space-y-2.5">
+      <input type="text" value={name} onChange={e => setName(e.target.value)}
         placeholder="Friend's name (optional)"
-        className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
-      />
-      <input
-        type="email"
-        value={email}
-        onChange={e => setEmail(e.target.value)}
-        placeholder="friend@example.com"
-        required
-        className="w-full px-3 py-2.5 rounded-lg border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200"
-      />
+        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200" />
+      <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+        placeholder="friend@example.com" required
+        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-200" />
       {err && <p className="text-red-500 text-xs">{err}</p>}
       {sent
-        ? <p className="text-green-600 text-sm font-semibold text-center">✅ Email invite sent!</p>
-        : (
-          <button
-            type="submit"
-            disabled={sending || !email}
-            className="w-full bg-[#A06CD5] text-white font-bold py-2.5 rounded-lg text-sm disabled:opacity-40"
-          >
-            {sending ? 'Opening email…' : 'Send Email Invite ✉️'}
+        ? <p className="text-green-600 text-sm font-bold text-center">✅ Invite sent!</p>
+        : <button type="submit" disabled={sending || !email}
+            className="w-full bg-[#A06CD5] text-white font-bold py-3 rounded-xl text-sm disabled:opacity-40">
+            {sending ? 'Sending…' : 'Send Email Invite ✉️'}
           </button>
-        )
       }
     </form>
   )
