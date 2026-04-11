@@ -105,6 +105,7 @@ function ManageMenu({
   const [time,    setTime]    = useState(potluck.event_time || '')
   const [loc,     setLoc]     = useState(potluck.location || '')
   const [busy,    setBusy]    = useState(false)
+  const [err,     setErr]     = useState<string | null>(null)
 
   async function reschedule() {
     setBusy(true)
@@ -128,7 +129,23 @@ function ManageMenu({
 
   async function deletePotluck() {
     setBusy(true)
-    await supabase.from('potlucks').delete().eq('id', potluck.id)
+    setErr(null)
+
+    // First delete child records that might not have CASCADE set up
+    await supabase.from('potluck_members').delete().eq('potluck_id', potluck.id)
+    await supabase.from('ratings').delete().eq('potluck_id', potluck.id)
+    await supabase.from('feed_posts').delete().eq('potluck_id', potluck.id)
+
+    // Now delete the potluck itself
+    const { error } = await supabase.from('potlucks').delete().eq('id', potluck.id)
+
+    if (error) {
+      console.error('Delete error:', error)
+      setErr('Could not delete. Make sure you are the host and have permission. (Check Supabase RLS policies.)')
+      setBusy(false)
+      return
+    }
+
     onDeleted()
   }
 
@@ -240,6 +257,9 @@ function ManageMenu({
             <div className="text-4xl">🗑️</div>
             <p className="text-base font-extrabold text-gray-900">Delete this potluck?</p>
             <p className="text-sm text-gray-400">This permanently deletes <strong>{potluck.name}</strong> and all its data — members, ratings, and photos. This cannot be undone.</p>
+            {err && (
+              <p className="text-xs text-red-500 bg-red-50 rounded-xl px-3 py-2">{err}</p>
+            )}
             <button onClick={deletePotluck} disabled={busy}
               className="w-full bg-red-500 text-white font-bold py-3.5 rounded-xl text-sm disabled:opacity-40">
               {busy ? 'Deleting…' : 'Yes, Delete Forever'}
