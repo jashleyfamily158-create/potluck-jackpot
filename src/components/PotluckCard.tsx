@@ -7,12 +7,14 @@
 
 import Link from 'next/link'
 import { formatDate } from '@/lib/utils'
+import { findTheme } from '@/lib/event-themes'
 
 interface PotluckCardProps {
   id: string
   name: string
   cuisineTheme: string
   cuisineEmoji: string
+  eventTheme?: string | null     // optional vibe/occasion theme name
   eventDate?: string
   location?: string
   memberCount: number
@@ -24,11 +26,14 @@ export default function PotluckCard({
   name,
   cuisineEmoji,
   cuisineTheme,
+  eventTheme,
   eventDate,
   location,
   memberCount,
   status,
 }: PotluckCardProps) {
+  // Look up the event theme details (color, emoji) if one was set
+  const themeDetails = eventTheme ? findTheme(eventTheme) : null
   // Color-code the status badge
   const statusColors: Record<string, string> = {
     pending: 'bg-yellow-100 text-yellow-700',
@@ -53,6 +58,17 @@ export default function PotluckCard({
             </div>
 
             <p className="text-sm text-gray-500">{cuisineTheme} cuisine</p>
+
+            {/* Event theme pill — only shown if the host set a vibe theme */}
+            {themeDetails && (
+              <div
+                className="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold text-white"
+                style={{ background: themeDetails.color }}
+              >
+                <span>{themeDetails.emoji}</span>
+                <span>{themeDetails.name}</span>
+              </div>
+            )}
 
             <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
               {eventDate && (

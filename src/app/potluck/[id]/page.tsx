@@ -17,6 +17,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth-context'
 import { formatInviteCode, formatDate, formatTime, CUISINE_THEMES } from '@/lib/utils'
+import { findTheme } from '@/lib/event-themes'
 import PhotoUpload from '@/components/PhotoUpload'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -26,6 +27,7 @@ interface Potluck {
   name: string
   invite_code: string
   cuisine_theme: string
+  event_theme: string | null     // optional vibe/occasion theme name
   host_id: string
   event_date: string | null
   event_time: string | null
@@ -439,7 +441,16 @@ export default function PotluckDashboard() {
           <span className="text-2xl">{cuisineInfo?.emoji || '🍽️'}</span>
           <div className="flex-1 min-w-0">
             <p className="text-white font-extrabold text-base leading-tight truncate">{potluck.name}</p>
-            <p className="text-white/70 text-xs">{potluck.cuisine_theme} cuisine</p>
+            <p className="text-white/70 text-xs">
+              {potluck.cuisine_theme} cuisine
+              {/* If a vibe theme was set, show its emoji + name inline */}
+              {potluck.event_theme && (() => {
+                const t = findTheme(potluck.event_theme)
+                return t ? (
+                  <span> · {t.emoji} {t.name}</span>
+                ) : null
+              })()}
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <StepDots status={status} />
@@ -470,6 +481,40 @@ export default function PotluckDashboard() {
             )}
           </div>
         )}
+
+        {/* ── Vibe theme banner ───────────────────────────────────────────── */}
+        {potluck.event_theme && (() => {
+          const t = findTheme(potluck.event_theme)
+          if (!t) return null
+          return (
+            <div
+              className="rounded-2xl p-3.5 text-white relative overflow-hidden"
+              style={{ background: `linear-gradient(135deg, ${t.color} 0%, ${t.color}cc 100%)` }}
+            >
+              <div className="flex items-start gap-3">
+                <div className="text-3xl flex-shrink-0">{t.emoji}</div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] opacity-80 uppercase tracking-wider font-bold">Vibe</p>
+                  <p className="font-extrabold text-sm leading-tight">{t.name}</p>
+                  <p className="text-[11px] opacity-90 italic mt-0.5">{t.tagline}</p>
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {t.ideas.slice(0, 3).map(idea => (
+                      <span key={idea}
+                        className="text-[10px] bg-white/20 backdrop-blur-sm rounded-full px-1.5 py-0.5 font-semibold">
+                        {idea}
+                      </span>
+                    ))}
+                  </div>
+                  {t.dressCode && (
+                    <p className="text-[10px] mt-1.5 opacity-90">
+                      <span className="font-bold">👗</span> {t.dressCode}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )
+        })()}
 
         {/* ── CANCELLED state ─────────────────────────────────────────────── */}
         {status === 'cancelled' && (

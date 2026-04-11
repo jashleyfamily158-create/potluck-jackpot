@@ -19,6 +19,7 @@ create table if not exists potlucks (
   name text not null,
   invite_code text unique not null,
   cuisine_theme text not null,
+  event_theme text,                  -- optional vibe/occasion theme (e.g., "Mafia Night", "Christmas Cookie Swap")
   host_id uuid references profiles(id) not null,
   event_date date,
   event_time time,
@@ -30,6 +31,9 @@ create table if not exists potlucks (
   community_lng float,
   created_at timestamptz default now()
 );
+
+-- Migration: add event_theme column to existing potlucks tables
+alter table potlucks add column if not exists event_theme text;
 
 -- Potluck Members (who joined each potluck)
 create table if not exists potluck_members (
@@ -133,9 +137,6 @@ create policy "Authenticated users can create potlucks" on potlucks
 create policy "Hosts can update their potlucks" on potlucks
   for update using (auth.uid() = host_id);
 
-create policy "Hosts can delete their own potlucks" on potlucks
-  for delete using (auth.uid() = host_id);
-
 -- Potluck Members: anyone can read, authenticated users can join
 create policy "Potluck members are viewable by everyone" on potluck_members
   for select using (true);
@@ -146,14 +147,6 @@ create policy "Authenticated users can join potlucks" on potluck_members
 create policy "Users can update own membership" on potluck_members
   for update using (auth.uid() = user_id);
 
-create policy "Hosts can delete members from their potlucks" on potluck_members
-  for delete using (
-    auth.uid() = user_id
-    or auth.uid() in (
-      select host_id from potlucks where id = potluck_id
-    )
-  );
-
 -- Ratings: members can read, rate others
 create policy "Ratings are viewable by potluck members" on ratings
   for select using (true);
@@ -161,29 +154,12 @@ create policy "Ratings are viewable by potluck members" on ratings
 create policy "Authenticated users can rate" on ratings
   for insert with check (auth.uid() = rater_id and auth.uid() != ratee_id);
 
-create policy "Hosts can delete ratings from their potlucks" on ratings
-  for delete using (
-    auth.uid() in (
-      select host_id from potlucks where id = potluck_id
-    )
-  );
-
 -- Feed: anyone can read, users can post
 create policy "Feed posts are viewable by everyone" on feed_posts
   for select using (true);
 
 create policy "Users can create feed posts" on feed_posts
   for insert with check (auth.uid() = user_id);
-
-create policy "Users can delete own feed posts" on feed_posts
-  for delete using (auth.uid() = user_id);
-
-create policy "Hosts can delete feed posts from their potlucks" on feed_posts
-  for delete using (
-    auth.uid() in (
-      select host_id from potlucks where id = potluck_id
-    )
-  );
 
 -- Likes: anyone can read, users can like
 create policy "Likes are viewable by everyone" on feed_likes

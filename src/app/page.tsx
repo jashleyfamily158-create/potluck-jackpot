@@ -23,6 +23,7 @@ interface PotluckData {
   id: string
   name: string
   cuisine_theme: string
+  event_theme: string | null     // optional vibe/occasion theme
   event_date: string | null
   location: string | null
   status: string
@@ -86,7 +87,7 @@ export default function HomePage() {
 
       const { data: potlucksData } = await supabase
         .from('potlucks')
-        .select('id, name, cuisine_theme, event_date, location, status, potluck_members(count)')
+        .select('id, name, cuisine_theme, event_theme, event_date, location, status, potluck_members(count)')
         .in('id', potluckIds)
         .order('created_at', { ascending: false })
 
@@ -282,6 +283,7 @@ export default function HomePage() {
                 name={potluck.name}
                 cuisineTheme={potluck.cuisine_theme}
                 cuisineEmoji={getEmoji(potluck.cuisine_theme)}
+                eventTheme={potluck.event_theme}
                 eventDate={potluck.event_date || undefined}
                 location={potluck.location || undefined}
                 memberCount={potluck.potluck_members?.[0]?.count || 0}
@@ -306,6 +308,7 @@ export default function HomePage() {
                 name={potluck.name}
                 cuisineTheme={potluck.cuisine_theme}
                 cuisineEmoji={getEmoji(potluck.cuisine_theme)}
+                eventTheme={potluck.event_theme}
                 eventDate={potluck.event_date || undefined}
                 location={potluck.location || undefined}
                 memberCount={potluck.potluck_members?.[0]?.count || 0}

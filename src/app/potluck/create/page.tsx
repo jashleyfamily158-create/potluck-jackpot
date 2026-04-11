@@ -3,8 +3,9 @@
  *
  * Multi-step form to create a new potluck:
  * 1. Pick a cuisine theme
- * 2. Set name, date, time, location
- * 3. Get your invite code to share
+ * 2. (Optional) Pick an event/vibe theme — browse or slot machine
+ * 3. Set name, date, time, location
+ * 4. Get your invite code to share
  *
  * Requires the user to be logged in. If not, redirects to signup.
  * After creating, the host is automatically added as a member.
@@ -15,7 +16,9 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import CuisineGrid from '@/components/CuisineGrid'
+import EventThemePicker from '@/components/EventThemePicker'
 import { generateInviteCode, formatInviteCode } from '@/lib/utils'
+import { EventTheme } from '@/lib/event-themes'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth-context'
 
@@ -26,6 +29,7 @@ export default function CreatePotluckPage() {
   // Form state
   const [step, setStep] = useState(1)
   const [cuisine, setCuisine] = useState('')
+  const [eventTheme, setEventTheme] = useState<string | null>(null)  // optional vibe/occasion
   const [name, setName] = useState('')
   const [eventDate, setEventDate] = useState('')
   const [eventTime, setEventTime] = useState('')
@@ -51,10 +55,27 @@ export default function CreatePotluckPage() {
     )
   }
 
+  // Tiny step indicator shown at the top of every step
+  function StepBadge() {
+    return (
+      <div className="flex items-center gap-1.5 text-[11px] text-gray-400 font-semibold">
+        <span>Step {step} of 4</span>
+        <div className="flex gap-1">
+          {[1,2,3,4].map(n => (
+            <div key={n} className={`h-1.5 rounded-full transition-all ${
+              n === step ? 'w-4 bg-orange-400' : n < step ? 'w-1.5 bg-orange-200' : 'w-1.5 bg-gray-200'
+            }`} />
+          ))}
+        </div>
+      </div>
+    )
+  }
+
   // Step 1: Pick a cuisine theme
   if (step === 1) {
     return (
       <div className="space-y-5">
+        <StepBadge />
         <div>
           <h2 className="text-xl font-extrabold text-gray-900 mb-1">
             Pick a Cuisine 🍽️
@@ -77,10 +98,49 @@ export default function CreatePotluckPage() {
     )
   }
 
-  // Step 2: Event details
+  // Step 2: Pick an OPTIONAL event/vibe theme
   if (step === 2) {
     return (
       <div className="space-y-5">
+        <StepBadge />
+        <div>
+          <h2 className="text-xl font-extrabold text-gray-900 mb-1">
+            Pick a Vibe 🎭 <span className="text-xs font-semibold text-gray-400 align-middle">(optional)</span>
+          </h2>
+          <p className="text-sm text-gray-500">
+            Want to add a fun theme on top of your cuisine? Browse over 80 themes
+            or pull the lever and let the slot machine pick for you.
+          </p>
+        </div>
+
+        <EventThemePicker
+          selected={eventTheme}
+          onSelect={(theme) => setEventTheme(theme ? theme.name : null)}
+        />
+
+        <div className="flex gap-3 sticky bottom-2 bg-gray-50/95 backdrop-blur p-2 -mx-2 rounded-xl">
+          <button
+            onClick={() => setStep(1)}
+            className="flex-1 border border-gray-200 text-gray-600 font-bold py-3 rounded-xl text-sm"
+          >
+            ← Back
+          </button>
+          <button
+            onClick={() => setStep(3)}
+            className="flex-1 gradient-primary text-white font-bold py-3 rounded-xl text-sm"
+          >
+            {eventTheme ? 'Next →' : 'Skip →'}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // Step 3: Event details
+  if (step === 3) {
+    return (
+      <div className="space-y-5">
+        <StepBadge />
         <div>
           <h2 className="text-xl font-extrabold text-gray-900 mb-1">
             Event Details 📋
@@ -150,7 +210,7 @@ export default function CreatePotluckPage() {
 
         <div className="flex gap-3">
           <button
-            onClick={() => setStep(1)}
+            onClick={() => setStep(2)}
             className="flex-1 border border-gray-200 text-gray-600 font-bold py-3 rounded-xl text-sm"
           >
             ← Back
@@ -166,13 +226,14 @@ export default function CreatePotluckPage() {
 
               const code = generateInviteCode()
 
-              // Save the potluck to Supabase
+              // Save the potluck to Supabase — includes optional event_theme
               const { data: newPotluck, error: dbError } = await supabase
                 .from('potlucks')
                 .insert({
                   name: name.trim(),
                   invite_code: code,
                   cuisine_theme: cuisine,
+                  event_theme: eventTheme,        // optional vibe/occasion
                   host_id: user.id,
                   event_date: eventDate || null,
                   event_time: eventTime || null,
@@ -199,7 +260,7 @@ export default function CreatePotluckPage() {
 
               setInviteCode(code)
               setLoading(false)
-              setStep(3)
+              setStep(4)
             }}
             disabled={loading}
             className="flex-1 gradient-primary text-white font-bold py-3 rounded-xl text-sm disabled:opacity-50"
@@ -211,7 +272,7 @@ export default function CreatePotluckPage() {
     )
   }
 
-  // Step 3: Show invite code
+  // Step 4: Show invite code
   return (
     <div className="min-h-[60vh] flex flex-col items-center justify-center text-center space-y-6">
       <div className="text-6xl">🎉</div>
